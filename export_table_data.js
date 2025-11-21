@@ -34,7 +34,7 @@
     });
     console.log('---------------------------');
     
-    // --- 2. 提示用户输入数据行容器选择器并全局查找 ---
+    // --- 2. 提示用户输入数据行容器选择器并全局查找 (同上版本) ---
     const rowContainerSelector = prompt("📝 请输入数据行容器的**全局**选择器 (例如: 'tbody[tabindex=\"-1\"]' 或 'div.data-rows'):", "tbody[tabindex=\"-1\"]");
     
     if (!rowContainerSelector) {
@@ -42,9 +42,7 @@
         return;
     }
     
-    // 全局查找所有匹配的容器
     const containers = Array.from(document.querySelectorAll(rowContainerSelector));
-
     if (containers.length === 0) {
         console.error(`❌ 错误：在整个页面上找不到选择器为 "${rowContainerSelector}" 的数据行容器。`);
         return;
@@ -55,7 +53,6 @@
         selectedContainer = containers[0];
         console.log(`✅ 自动选中唯一的匹配容器: ${rowContainerSelector}`);
     } else {
-        // 找到多个容器，让用户选择
         console.log(`--- 找到 ${containers.length} 个匹配的容器，请选择序号 ---`);
         containers.forEach((container, index) => {
             const parentContext = container.parentElement ? 
@@ -75,7 +72,7 @@
         console.log(`✅ 已选择序号 ${choice} 的容器。`);
     }
 
-    // --- 3. 提示用户输入列名称，并将其转换为索引 ---
+    // --- 3. 提示用户输入列名称，并将其转换为索引 (同上版本) ---
     const columnsNameInput = prompt(`📝 请输入您想导出的**列名称** (用逗号 ',' 分隔，例如: '${headers.slice(0, 2).join(',')}'):`);
 
     if (!columnsNameInput) {
@@ -83,7 +80,6 @@
         return;
     }
 
-    // 将名称转换为索引
     const requiredColumns = []; // 存储 {name: string, index: number}
     const missingHeaders = [];  // 存储未找到的名称
 
@@ -104,43 +100,87 @@
         console.warn(`⚠️ 警告：找不到以下列名称，已跳过：${missingHeaders.join(', ')}`);
     }
 
-
     // --- 4. 提取数据 ---
     const data = [];
-    
-    // 从选中的容器内查找所有行
     const dataRows = Array.from(selectedContainer.querySelectorAll('tr'));
     
-    requiredColumns.forEach(col => {
-        console.log(`✅ 正在导出列: ${col.name} (索引: ${col.index})`);
-    });
-
     dataRows.forEach(row => {
         const rowData = {};
         const cells = Array.from(row.querySelectorAll('td, th')); 
 
         requiredColumns.forEach(col => {
-            if (cells[col.index]) {
-                rowData[col.name] = cells[col.index].textContent.trim();
-            } else {
-                rowData[col.name] = null; 
-            }
+            const cellValue = cells[col.index] ? cells[col.index].textContent.trim() : null;
+            rowData[col.name] = cellValue;
         });
 
-        // 只有当行提取到了所需数量的数据才加入结果集
         if (Object.keys(rowData).length === requiredColumns.length) {
              data.push(rowData);
         }
     });
 
-    // --- 5. 输出 JSON 结果 ---
-    const jsonOutput = JSON.stringify(data, null, 2);
+    if (data.length === 0) {
+        console.log('⚠️ 警告: 未提取到任何数据行。');
+        return;
+    }
 
-    console.log('--- ✅ 数据导出成功 ---');
-    console.log(`导出的列名称: ${requiredColumns.map(c => c.name).join(', ')}`);
-    console.log(`总共导出 ${data.length} 行数据。`);
-    console.log(jsonOutput);
-    console.log('---------------------------');
+    // --- 5. 提示用户选择导出格式并执行导出 ---
+    const exportFormat = prompt("📁 请选择导出格式 (输入 'json' 或 'csv'):", "json").toLowerCase();
+
+    const columnNames = requiredColumns.map(c => c.name);
+    const fileName = `ExportedData_${new Date().toISOString().slice(0, 10)}`;
+
+    if (exportFormat === 'csv') {
+        
+        // CSV 导出逻辑
+        const csvRows = [];
+        
+        // 1. CSV Header Row
+        // 确保字段中的双引号被转义，并且如果有逗号，整个字段用双引号包裹
+        const escapeCsvField = (field) => {
+            if (field === null) return '';
+            const str = String(field).replace(/"/g, '""');
+            if (str.includes(',') || str.includes('\n')) {
+                return `"${str}"`;
+            }
+            return str;
+        };
+        
+        csvRows.push(columnNames.map(escapeCsvField).join(','));
+
+        // 2. CSV Data Rows
+        data.forEach(item => {
+            const row = columnNames.map(name => escapeCsvField(item[name])).join(',');
+            csvRows.push(row);
+        });
+
+        const csvString = '\uFEFF' + csvRows.join('\n'); // 添加 BOM 头，确保 Excel 正确识别中文编码
+
+        // 创建下载链接并触发下载
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${fileName}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        console.log(`--- ✅ 数据导出成功 (CSV) ---`);
+        console.log(`文件 '${fileName}.csv' 已尝试下载。`);
+
+    } else { // 默认为 JSON 导出
+        
+        const jsonOutput = JSON.stringify(data, null, 2);
+
+        // JSON 导出逻辑 (输出到控制台)
+        console.log('--- ✅ 数据导出成功 (JSON) ---');
+        console.log(`总共导出 ${data.length} 行数据。`);
+        console.log(jsonOutput);
+        console.log('---------------------------');
+    }
     
-    return jsonOutput;
+    console.log(`导出的列名称: ${columnNames.join(', ')}`);
+    // 返回结果，方便在控制台中直接复制 JSON
+    return data;
 })();
