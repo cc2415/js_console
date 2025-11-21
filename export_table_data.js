@@ -15,14 +15,20 @@
         return;
     }
 
-    const headers = Array.from(headerRow.querySelectorAll('th, td')).map(h => h.textContent.trim());
+    // 创建表头名称到索引的映射
+    const headerMap = {};
+    const headers = Array.from(headerRow.querySelectorAll('th, td')).map((h, index) => {
+        const name = h.textContent.trim();
+        headerMap[name] = index;
+        return name;
+    });
 
     if (headers.length === 0) {
         console.error('❌ 错误：找不到任何表头单元格。');
         return;
     }
 
-    console.log('--- 📋 表头及对应列索引 ---');
+    console.log('--- 📋 可用表头及对应列索引 ---');
     headers.forEach((header, index) => {
         console.log(`[${index}] ${header}`);
     });
@@ -52,7 +58,6 @@
         // 找到多个容器，让用户选择
         console.log(`--- 找到 ${containers.length} 个匹配的容器，请选择序号 ---`);
         containers.forEach((container, index) => {
-            // 尽量展示容器的上下文信息，例如父级 ID/类名
             const parentContext = container.parentElement ? 
                 ` (父级: ${container.parentElement.id ? '#' + container.parentElement.id : container.parentElement.className ? '.' + container.parentElement.className : container.parentElement.tagName})` : '';
             console.log(`[${index}]: <${container.tagName}>${parentContext}`);
@@ -70,22 +75,35 @@
         console.log(`✅ 已选择序号 ${choice} 的容器。`);
     }
 
-    // --- 3. 提示用户输入列索引 ---
-    const columnsInput = prompt("📝 请输入您想导出的列的**索引** (用逗号 ',' 分隔，例如: '0,2,3'):");
+    // --- 3. 提示用户输入列名称，并将其转换为索引 ---
+    const columnsNameInput = prompt(`📝 请输入您想导出的**列名称** (用逗号 ',' 分隔，例如: '${headers.slice(0, 2).join(',')}'):`);
 
-    if (!columnsInput) {
+    if (!columnsNameInput) {
         console.log('✅ 已取消导出操作。');
         return;
     }
 
-    const requiredIndices = columnsInput.split(',')
-        .map(i => parseInt(i.trim(), 10))
-        .filter(i => !isNaN(i) && i >= 0 && i < headers.length);
+    // 将名称转换为索引
+    const requiredColumns = []; // 存储 {name: string, index: number}
+    const missingHeaders = [];  // 存储未找到的名称
 
-    if (requiredIndices.length === 0) {
-        console.error('❌ 错误：请输入有效的列索引。');
+    columnsNameInput.split(',').map(name => name.trim()).filter(name => name).forEach(name => {
+        if (headerMap.hasOwnProperty(name)) {
+            requiredColumns.push({ name: name, index: headerMap[name] });
+        } else {
+            missingHeaders.push(name);
+        }
+    });
+
+    if (requiredColumns.length === 0) {
+        console.error('❌ 错误：您输入的列名称与表格中的任何列名称都不匹配。');
         return;
     }
+    
+    if (missingHeaders.length > 0) {
+        console.warn(`⚠️ 警告：找不到以下列名称，已跳过：${missingHeaders.join(', ')}`);
+    }
+
 
     // --- 4. 提取数据 ---
     const data = [];
@@ -93,22 +111,24 @@
     // 从选中的容器内查找所有行
     const dataRows = Array.from(selectedContainer.querySelectorAll('tr'));
     
+    requiredColumns.forEach(col => {
+        console.log(`✅ 正在导出列: ${col.name} (索引: ${col.index})`);
+    });
+
     dataRows.forEach(row => {
         const rowData = {};
         const cells = Array.from(row.querySelectorAll('td, th')); 
 
-        requiredIndices.forEach(index => {
-            const header = headers[index]; // 使用表头作为 JSON 键名
-            
-            if (cells[index]) {
-                rowData[header] = cells[index].textContent.trim();
+        requiredColumns.forEach(col => {
+            if (cells[col.index]) {
+                rowData[col.name] = cells[col.index].textContent.trim();
             } else {
-                rowData[header] = null; 
+                rowData[col.name] = null; 
             }
         });
 
         // 只有当行提取到了所需数量的数据才加入结果集
-        if (Object.keys(rowData).length === requiredIndices.length) {
+        if (Object.keys(rowData).length === requiredColumns.length) {
              data.push(rowData);
         }
     });
@@ -117,7 +137,7 @@
     const jsonOutput = JSON.stringify(data, null, 2);
 
     console.log('--- ✅ 数据导出成功 ---');
-    console.log(`选择的列索引: ${requiredIndices.join(', ')}`);
+    console.log(`导出的列名称: ${requiredColumns.map(c => c.name).join(', ')}`);
     console.log(`总共导出 ${data.length} 行数据。`);
     console.log(jsonOutput);
     console.log('---------------------------');
